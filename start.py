@@ -1,67 +1,94 @@
-# Code by Sergio1260
-
 from subprocess import Popen
 from sys import path, argv
 from os.path import exists, isdir
 from os import sep
 from time import sleep as delay
+import logging
+
+# Setup logging
+logging.basicConfig(filename='web_file_sharing_server.log', level=logging.DEBUG, format='%(asctime)s %(levelname)s:%(message)s')
 
 def init():
-    if len(argv)==1:
-        file=path[0]+sep+"bin"+sep+"config.cfg"
-    else: file=argv[1]
-    try: file = open(file,"r")
-    except: print("ERROR: config file not valid or not exists"); exit()
-    dic={}
-    for x in file:
-        x=x.rstrip().lstrip()
-        if not len(x)==0 and not x.startswith("#"):
-            key=x[:x.find(":")]; value=x[x.find(":")+1:]
-            value=value.strip(); dic[key.strip()]=value
-    if not "port" in dic: dic["port"]="80"
-    if not "listen" in dic: dic["listen"]="172.0.0.1"
-    if not "show.folder.size" in dic: folder_size="false"
-    if not "use.subtitle.cache" in dic: subtitle_cache="false"
+    try:
+        if len(argv) == 1:
+            file_path = path[0] + sep + "bin" + sep + "config.cfg"
+        else:
+            file_path = argv[1]
 
-    if not "folder" in dic:
-        print("[CFG_FILE]: A FOLDER PATH IS NEEDED"); exit()
-    root=dic["folder"]
-    if not (exists(root) and isdir(root)):
-        print("[CFG_FILE]: THE SPECIFIED FOLDER PATH IS NOT VALID"); exit()
-    port=dic["port"]; listen=dic["listen"]
+        with open(file_path, "r") as file:
+            config_lines = file.readlines()
 
-    subtitle_cache=dic["use.subtitle.cache"].upper()
-    if subtitle_cache=="TRUE": subtitle_cache=True
-    elif subtitle_cache=="FALSE": subtitle_cache=False
-    else: print("[CFG_FILE]: INVALID VALUE"); exit() 
+        config = {}
+        for line in config_lines:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                key, value = map(str.strip, line.split(":", 1))
+                config[key] = value
 
-    folder_size=dic["show.folder.size"].upper()
-    if folder_size=="TRUE": folder_size=True
-    elif folder_size=="FALSE": folder_size=False
-    else: print("[CFG_FILE]: INVALID VALUE"); exit()   
+        config.setdefault("port", "80")
+        config.setdefault("listen", "127.0.0.1")
+        config.setdefault("show.folder.size", "false")
+        config.setdefault("use.subtitle.cache", "false")
 
-    if "-" in port:
-        st,end = port.split("-")
-        st=int(st); end=int(end)
-        ports=[str(x) for x in range(st,end+1)]
-    else: ports=[x.strip() for x in port.split(",")]
-    listen=[x.strip() for x in listen.split(",")]
-    return ports, listen, root, folder_size, subtitle_cache
+        if "folder" not in config:
+            raise ValueError("[CFG_FILE]: A FOLDER PATH IS NEEDED")
+        
+        root = config["folder"]
+        if not (exists(root) and isdir(root)):
+            raise ValueError("[CFG_FILE]: THE SPECIFIED FOLDER PATH IS NOT VALID")
+
+        port = config["port"]
+        listen = config["listen"]
+
+        subtitle_cache = config["use.subtitle.cache"].upper() == "TRUE"
+        folder_size = config["show.folder.size"].upper() == "TRUE"
+
+        if "-" in port:
+            start, end = map(int, port.split("-"))
+            ports = [str(x) for x in range(start, end + 1)]
+        else:
+            ports = [x.strip() for x in port.split(",")]
+
+        listen = [x.strip() for x in listen.split(",")]
+        return ports, listen, root, folder_size, subtitle_cache
+
+    except (FileNotFoundError, ValueError) as e:
+        logging.error(f"Configuration error: {e}")
+        print(e)
+        exit(1)
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        print("An unexpected error occurred:", e)
+        exit(1)
 
 def main():
-    ports,listen,root,folder_size,subtitle_cache = init()
-    PyExec=path[0]+sep+"bin"+sep+"main.py"
-    if sep==chr(92): python="python"
-    else: python="python3"
-    for ip in listen:
-        for port in ports:
-            args=[python,PyExec,"-b",ip,"-p",port,"-d",root]
-            if folder_size: args.append("--dirsize")
-            if subtitle_cache: args.append("--subtitle_cache")
-            Popen(args); delay(0.1)
-    try: # wait forever
-        while True: delay(1)
-    except: exit()
+    try:
+        ports, listen, root, folder_size, subtitle_cache = init()
+        py_exec = path[0] + sep + "bin" + sep + "main.py"
+        python = "python" if sep == chr(92) else "python3"
 
+        for ip in listen:
+            for port in ports:
+                args = [python, py_exec, "-b", ip, "-p", port, "-d", root]
+                if folder_size:
+                    args.append("--dirsize")
+                if subtitle_cache:
+                    args.append("--subtitle_cache")
+                Popen(args)
+                delay(0.1)
 
-if __name__=="__main__": main()
+        # Wait forever
+        while True:
+            delay(1)
+
+    except KeyboardInterrupt:
+        print("Server stopped by user.")
+        exit(0)
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        print("An unexpected error occurred:", e)
+        exit(1)
+
+if __name__ == "__main__":
+    main()
+
